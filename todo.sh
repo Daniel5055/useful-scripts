@@ -43,11 +43,34 @@ throw_error ()
 
 list ()
 {
-    # Print all except last line which contains meta data
-    if [ "$#" -eq 0 ]; then
-        sed '$d' "$TODO_PATH"
+    is_checked=0
+    # Check for options
+    while getopts "c" o; do
+        case "$o" in
+            c)
+                # Insert at number
+                is_checked=1
+                ;;
+            *)
+                throw_error 'add'
+                ;;
+        esac
+    done
+
+    shift $((OPTIND - 1))
+
+    # Check if to print checked list or regualar list
+    if [ "$is_checked" -eq 0 ]; then
+        # Print all except last line which contains meta data
+        if [ "$#" -eq 0 ]; then
+            sed '$d' "$TODO_PATH"
+        else
+            throw_error 'list'
+        fi
     else
-        throw_error 'list'   
+        cat "$CHECKED_PATH"
+        echo "===================================>>"
+        echo ""
     fi
 }
 
@@ -119,7 +142,7 @@ add ()
 
     elif [[ "$insert_line" =~ ^[0-9]+$ ]]; then
 
-        # Check that number is not zero and is within range 
+        # Check that number is not zero and is within range
         if [ "$insert_line" -gt 0 ] && [ "$insert_line" -le "$count" ]; then
             find_item "$insert_line"
             sed -i "$line"' i\|| '"$insert_line"') '"$item"'\n||' "$TODO_PATH"
@@ -158,6 +181,7 @@ edit ()
     done
 
     shift $((OPTIND - 1))
+
     if [ "$#" -eq 2 ] && [[ "$1" =~ ^[0-9]+$ ]]; then
         find_item "$1"
 
@@ -181,17 +205,23 @@ edit ()
 delete ()
 {
     is_quiet=0
+    is_mistake=0
     # Check for options
-    while getopts "q" o; do
+    while getopts "qm" o; do
         case "$o" in
             q)
                 is_quiet=1
+                ;;
+            m)
+                is_mistake=1
                 ;;
             *)
                 throw_error 'add'
                 ;;
         esac
     done
+
+    shift $((OPTIND - 1))
 
     # check that argument provided and is number
     if [ "$#" -eq 1 ] && [[ "$1" =~ ^[0-9]+$ ]]; then
@@ -201,6 +231,22 @@ delete ()
         if [ "$line" -eq 0 ]; then
             throw_error 'delete' "Line number not found"
         else
+            # If not a mistake, move this line over to the checked list
+            if [ "$is_mistake" -eq 0 ]; then
+
+                # Check if todo_checked does not exist
+                if [[ ! -f "$CHECKED_PATH" ]]; then
+                    # Create checked file
+                    echo "" > "$CHECKED_PATH"
+                    echo "Completed Items" >> "$CHECKED_PATH"
+                    echo "=====================================>>" >> "$CHECKED_PATH"
+                    echo "||" >> "$CHECKED_PATH"
+                fi
+
+                # Get line and remove number and add to checked file
+                sed -n "${line}p" "$TODO_PATH" | sed -E 's/[0-9]+/✓/' >> "$CHECKED_PATH"
+                echo "||" >> "$CHECKED_PATH"
+            fi
             sed -i "$line"','"$((line + 1 ))"'d' "$TODO_PATH"
         fi
 
@@ -245,7 +291,10 @@ EOF
 
 }
 
+# Paths
 TODO_PATH=~/.scripts/todo/todo_list
+CHECKED_PATH=~/.scripts/todo/todo_checked
+
 # First check if todo list doesn't exist
 if [[ ! -f "$TODO_PATH" ]]; then
     create
